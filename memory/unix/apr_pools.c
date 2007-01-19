@@ -62,16 +62,39 @@
 
 /*
  * Allocator
+ *
+ * @note The max_free_index and current_free_index fields are not really
+ * indices, but quantities of BOUNDARY_SIZE big memory blocks.
  */
 
 struct apr_allocator_t {
+    /** largest used index into free[], always < MAX_INDEX */
     apr_uint32_t        max_index;
+    /** Total size (in BOUNDARY_SIZE multiples) of unused memory before
+     * blocks are given back. @see apr_allocator_max_free_set().
+     * @note Initialized to APR_ALLOCATOR_MAX_FREE_UNLIMITED,
+     * which means to never give back blocks.
+     */
     apr_uint32_t        max_free_index;
+    /**
+     * Memory size (in BOUNDARY_SIZE multiples) that currently must be freed
+     * before blocks are given back. Range: 0..max_free_index
+     */
     apr_uint32_t        current_free_index;
 #if APR_HAS_THREADS
     apr_thread_mutex_t *mutex;
 #endif /* APR_HAS_THREADS */
     apr_pool_t         *owner;
+    /**
+     * Lists of free nodes. Slot 0 is used for oversized nodes,
+     * and the slots 1..MAX_INDEX-1 contain nodes of sizes
+     * (i+1) * BOUNDARY_SIZE. Example for BOUNDARY_INDEX == 12:
+     * slot  0: nodes larger than 81920
+     * slot  1: size  8192
+     * slot  2: size 12288
+     * ...
+     * slot 19: size 81920
+     */
     apr_memnode_t      *free[MAX_INDEX];
 };
 
@@ -1104,7 +1127,7 @@ static void apr_pool_log_event(apr_pool_t *pool, const char *event,
                 "] "
                 "%7s "
                 "(%10lu/%10lu/%10lu) "
-                "0x%08X \"%s\" "
+                "0x%pp \"%s\" "
                 "<%s> "
                 "(%u/%u/%u) "
                 "\n",
@@ -1116,7 +1139,7 @@ static void apr_pool_log_event(apr_pool_t *pool, const char *event,
                 (unsigned long)apr_pool_num_bytes(pool, 0),
                 (unsigned long)apr_pool_num_bytes(pool, 1),
                 (unsigned long)apr_pool_num_bytes(global_pool, 1),
-                (unsigned int)pool, pool->tag,
+                pool, pool->tag,
                 file_line,
                 pool->stat_alloc, pool->stat_total_alloc, pool->stat_clear);
         }
@@ -1130,7 +1153,7 @@ static void apr_pool_log_event(apr_pool_t *pool, const char *event,
                 "] "
                 "%7s "
                 "                                   "
-                "0x%08X "
+                "0x%pp "
                 "<%s> "
                 "\n",
                 (unsigned long)getpid(),
@@ -1138,7 +1161,7 @@ static void apr_pool_log_event(apr_pool_t *pool, const char *event,
                 (unsigned long)apr_os_thread_current(),
 #endif /* APR_HAS_THREADS */
                 event,
-                (unsigned int)pool,
+                pool,
                 file_line);
         }
     }
@@ -1210,6 +1233,7 @@ APR_DECLARE(apr_status_t) apr_pool_initialize(void)
     apr_status_t rv;
 #if (APR_POOL_DEBUG & APR_POOL_DEBUG_VERBOSE_ALL)
     char *logpath;
+    apr_file_t *debug_log = NULL;
 #endif
 
     if (apr_pools_initialized++)
@@ -1239,13 +1263,20 @@ APR_DECLARE(apr_status_t) apr_pool_initialize(void)
 #if (APR_POOL_DEBUG & APR_POOL_DEBUG_VERBOSE_ALL)
     rv = apr_env_get(&logpath, "APR_POOL_DEBUG_LOG", global_pool);
 
+    /* Don't pass file_stderr directly to apr_file_open() here, since
+     * apr_file_open() can call back to apr_pool_log_event() and that
+     * may attempt to use then then non-NULL but partially set up file
+     * object. */
     if (rv == APR_SUCCESS) {
-        apr_file_open(&file_stderr, logpath, APR_APPEND|APR_WRITE|APR_CREATE,
+        apr_file_open(&debug_log, logpath, APR_APPEND|APR_WRITE|APR_CREATE,
                       APR_OS_DEFAULT, global_pool);
     }
     else {
-        apr_file_open_stderr(&file_stderr, global_pool);
+        apr_file_open_stderr(&debug_log, global_pool);
     }
+
+    /* debug_log is now a file handle. */
+    file_stderr = debug_log;
 
     if (file_stderr) {
         apr_file_printf(file_stderr,
@@ -1396,7 +1427,7 @@ static void pool_clear_debug(apr_pool_t *pool, const char *file_line)
 
         for (index = 0; index < node->index; index++) {
             memset(node->beginp[index], POOL_POISON_BYTE,
-                   node->endp[index] - node->beginp[index]);
+                   (char *)node->endp[index] - (char *)node->beginp[index]);
             free(node->beginp[index]);
         }
 
