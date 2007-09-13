@@ -25,6 +25,63 @@
 #define USE_WAIT_FOR_IO
 #endif
 
+static apr_status_t file_read_buffered(apr_file_t *thefile, void *buf,
+                                       apr_size_t *nbytes)
+{
+    apr_ssize_t rv;
+    char *pos = (char *)buf;
+    apr_uint64_t blocksize;
+    apr_uint64_t size = *nbytes;
+
+    if (thefile->direction == 1) {
+        rv = apr_file_flush_locked(thefile);
+        if (rv) {
+            return rv;
+        }
+        thefile->bufpos = 0;
+        thefile->direction = 0;
+        thefile->dataRead = 0;
+    }
+
+    rv = 0;
+    if (thefile->ungetchar != -1) {
+        *pos = (char)thefile->ungetchar;
+        ++pos;
+        --size;
+        thefile->ungetchar = -1;
+    }
+    while (rv == 0 && size > 0) {
+        if (thefile->bufpos >= thefile->dataRead) {
+            int bytesread = read(thefile->filedes, thefile->buffer, 
+                                 thefile->bufsize);
+            if (bytesread == 0) {
+                thefile->eof_hit = TRUE;
+                rv = APR_EOF;
+                break;
+            }
+            else if (bytesread == -1) {
+                rv = errno;
+                break;
+            }
+            thefile->dataRead = bytesread;
+            thefile->filePtr += thefile->dataRead;
+            thefile->bufpos = 0;
+        }
+
+        blocksize = size > thefile->dataRead - thefile->bufpos ? thefile->dataRead - thefile->bufpos : size;
+        memcpy(pos, thefile->buffer + thefile->bufpos, blocksize);
+        thefile->bufpos += blocksize;
+        pos += blocksize;
+        size -= blocksize;
+    }
+
+    *nbytes = pos - (char *)buf;
+    if (*nbytes) {
+        rv = 0;
+    }
+    return rv;
+}
+
 APR_DECLARE(apr_status_t) apr_file_read(apr_file_t *thefile, void *buf, apr_size_t *nbytes)
 {
     apr_ssize_t rv;
@@ -36,72 +93,9 @@ APR_DECLARE(apr_status_t) apr_file_read(apr_file_t *thefile, void *buf, apr_size
     }
 
     if (thefile->buffered) {
-        char *pos = (char *)buf;
-        apr_uint64_t blocksize;
-        apr_uint64_t size = *nbytes;
-
-#if APR_HAS_THREADS
-        if (thefile->thlock) {
-            apr_thread_mutex_lock(thefile->thlock);
-        }
-#endif
-
-        if (thefile->direction == 1) {
-            rv = apr_file_flush(thefile);
-            if (rv) {
-#if APR_HAS_THREADS
-                if (thefile->thlock) {
-                    apr_thread_mutex_unlock(thefile->thlock);
-                }
-#endif
-                return rv;
-            }
-            thefile->bufpos = 0;
-            thefile->direction = 0;
-            thefile->dataRead = 0;
-        }
-
-        rv = 0;
-        if (thefile->ungetchar != -1) {
-            *pos = (char)thefile->ungetchar;
-            ++pos;
-            --size;
-            thefile->ungetchar = -1;
-        }
-        while (rv == 0 && size > 0) {
-            if (thefile->bufpos >= thefile->dataRead) {
-                int bytesread = read(thefile->filedes, thefile->buffer, 
-                                     thefile->bufsize);
-                if (bytesread == 0) {
-                    thefile->eof_hit = TRUE;
-                    rv = APR_EOF;
-                    break;
-                }
-                else if (bytesread == -1) {
-                    rv = errno;
-                    break;
-                }
-                thefile->dataRead = bytesread;
-                thefile->filePtr += thefile->dataRead;
-                thefile->bufpos = 0;
-            }
-
-            blocksize = size > thefile->dataRead - thefile->bufpos ? thefile->dataRead - thefile->bufpos : size;
-            memcpy(pos, thefile->buffer + thefile->bufpos, blocksize);
-            thefile->bufpos += blocksize;
-            pos += blocksize;
-            size -= blocksize;
-        }
-
-        *nbytes = pos - (char *)buf;
-        if (*nbytes) {
-            rv = 0;
-        }
-#if APR_HAS_THREADS
-        if (thefile->thlock) {
-            apr_thread_mutex_unlock(thefile->thlock);
-        }
-#endif
+        file_lock(thefile);
+        rv = file_read_buffered(thefile, buf, nbytes);
+        file_unlock(thefile);
         return rv;
     }
     else {
@@ -159,11 +153,7 @@ APR_DECLARE(apr_status_t) apr_file_write(apr_file_t *thefile, const void *buf, a
         int blocksize;
         int size = *nbytes;
 
-#if APR_HAS_THREADS
-        if (thefile->thlock) {
-            apr_thread_mutex_lock(thefile->thlock);
-        }
-#endif
+        file_lock(thefile);
 
         if ( thefile->direction == 0 ) {
             /* Position file pointer for writing at the offset we are 
@@ -179,7 +169,7 @@ APR_DECLARE(apr_status_t) apr_file_write(apr_file_t *thefile, const void *buf, a
         rv = 0;
         while (rv == 0 && size > 0) {
             if (thefile->bufpos == thefile->bufsize)   /* write buffer is full*/
-                rv = apr_file_flush(thefile);
+                rv = apr_file_flush_locked(thefile);
 
             blocksize = size > thefile->bufsize - thefile->bufpos ? 
                         thefile->bufsize - thefile->bufpos : size;
@@ -189,11 +179,8 @@ APR_DECLARE(apr_status_t) apr_file_write(apr_file_t *thefile, const void *buf, a
             size -= blocksize;
         }
 
-#if APR_HAS_THREADS
-        if (thefile->thlock) {
-            apr_thread_mutex_unlock(thefile->thlock);
-        }
-#endif
+        file_unlock(thefile);
+
         return rv;
     }
     else {
@@ -240,16 +227,40 @@ APR_DECLARE(apr_status_t) apr_file_writev(apr_file_t *thefile, const struct iove
                                           apr_size_t nvec, apr_size_t *nbytes)
 {
 #ifdef HAVE_WRITEV
+    apr_status_t rv;
     apr_ssize_t bytes;
+
+    if (thefile->buffered) {
+        file_lock(thefile);
+
+        rv = apr_file_flush_locked(thefile);
+        if (rv != APR_SUCCESS) {
+            file_unlock(thefile);
+            return rv;
+        }
+        if (thefile->direction == 0) {
+            /* Position file pointer for writing at the offset we are
+             * logically reading from
+             */
+            apr_int64_t offset = thefile->filePtr - thefile->dataRead +
+                                 thefile->bufpos;
+            if (offset != thefile->filePtr)
+                lseek(thefile->filedes, offset, SEEK_SET);
+            thefile->bufpos = thefile->dataRead = 0;
+        }
+
+        file_unlock(thefile);
+    }
 
     if ((bytes = writev(thefile->filedes, vec, nvec)) < 0) {
         *nbytes = 0;
-        return errno;
+        rv = errno;
     }
     else {
         *nbytes = bytes;
-        return APR_SUCCESS;
+        rv = APR_SUCCESS;
     }
+    return rv;
 #else
     /**
      * The problem with trying to output the entire iovec is that we cannot
@@ -295,26 +306,40 @@ APR_DECLARE(apr_status_t) apr_file_puts(const char *str, apr_file_t *thefile)
     return apr_file_write_full(thefile, str, strlen(str), NULL);
 }
 
-APR_DECLARE(apr_status_t) apr_file_flush(apr_file_t *thefile)
+apr_status_t apr_file_flush_locked(apr_file_t *thefile)
 {
-    if (thefile->buffered) {
-        if (thefile->direction == 1 && thefile->bufpos) {
-            apr_ssize_t written;
+    apr_status_t rv = APR_SUCCESS;
 
-            do {
-                written = write(thefile->filedes, thefile->buffer, thefile->bufpos);
-            } while (written == -1 && errno == EINTR);
-            if (written == -1) {
-                return errno;
-            }
+    if (thefile->direction == 1 && thefile->bufpos) {
+        apr_ssize_t written;
+
+        do {
+            written = write(thefile->filedes, thefile->buffer, thefile->bufpos);
+        } while (written == -1 && errno == EINTR);
+        if (written == -1) {
+            rv = errno;
+        } else {
             thefile->filePtr += written;
             thefile->bufpos = 0;
         }
     }
+
+    return rv;
+}
+
+APR_DECLARE(apr_status_t) apr_file_flush(apr_file_t *thefile)
+{
+    apr_status_t rv = APR_SUCCESS;
+
+    if (thefile->buffered) {
+        file_lock(thefile);
+        rv = apr_file_flush_locked(thefile);
+        file_unlock(thefile);
+    }
     /* There isn't anything to do if we aren't buffering the output
      * so just return success.
      */
-    return APR_SUCCESS; 
+    return rv;
 }
 
 APR_DECLARE(apr_status_t) apr_file_gets(char *str, int len, apr_file_t *thefile)
@@ -334,21 +359,12 @@ APR_DECLARE(apr_status_t) apr_file_gets(char *str, int len, apr_file_t *thefile)
      * and skip over the apr_file_read calls.
      */
     if (thefile->buffered) {
-
-#if APR_HAS_THREADS
-        if (thefile->thlock) {
-            apr_thread_mutex_lock(thefile->thlock);
-        }
-#endif
+        file_lock(thefile);
 
         if (thefile->direction == 1) {
-            rv = apr_file_flush(thefile);
+            rv = apr_file_flush_locked(thefile);
             if (rv) {
-#if APR_HAS_THREADS
-                if (thefile->thlock) {
-                    apr_thread_mutex_unlock(thefile->thlock);
-                }
-#endif
+                file_unlock(thefile);
                 return rv;
             }
 
@@ -365,7 +381,7 @@ APR_DECLARE(apr_status_t) apr_file_gets(char *str, int len, apr_file_t *thefile)
             }
             else {
                 nbytes = 1;
-                rv = apr_file_read(thefile, str, &nbytes);
+                rv = file_read_buffered(thefile, str, &nbytes);
                 if (rv != APR_SUCCESS) {
                     break;
                 }
@@ -376,12 +392,7 @@ APR_DECLARE(apr_status_t) apr_file_gets(char *str, int len, apr_file_t *thefile)
             }
             ++str;
         }
-
-#if APR_HAS_THREADS
-        if (thefile->thlock) {
-            apr_thread_mutex_unlock(thefile->thlock);
-        }
-#endif
+        file_unlock(thefile);
     }
     else {
         while (str < final) { /* leave room for trailing '\0' */

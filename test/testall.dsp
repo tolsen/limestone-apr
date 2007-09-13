@@ -139,6 +139,10 @@ SOURCE=.\testatomic.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\testcond.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\testdir.c
 # End Source File
 # Begin Source File
@@ -244,10 +248,6 @@ SOURCE=.\testprocmutex.c
 # Begin Source File
 
 SOURCE=.\testrand.c
-# End Source File
-# Begin Source File
-
-SOURCE=.\testrand2.c
 # End Source File
 # Begin Source File
 

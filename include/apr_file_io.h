@@ -93,11 +93,11 @@ extern "C" {
 #define APR_SENDFILE_ENABLED APR_FOPEN_SENDFILE_ENABLED /**< @deprecated @see APR_FOPEN_SENDFILE_ENABLED */   
 #define APR_LARGEFILE        APR_FOPEN_LARGEFILE  /**< @deprecated @see APR_FOPEN_LARGEFILE */   
 
-/** @warning The APR_LARGEFILE flag only has effect on some platforms
- * where sizeof(apr_off_t) == 4.  Where implemented, it allows opening
- * and writing to a file which exceeds the size which can be
- * represented by apr_off_t (2 gigabytes).  When a file's size does
- * exceed 2Gb, apr_file_info_get() will fail with an error on the
+/** @warning The APR_FOPEN_LARGEFILE flag only has effect on some
+ * platforms where sizeof(apr_off_t) == 4.  Where implemented, it
+ * allows opening and writing to a file which exceeds the size which
+ * can be represented by apr_off_t (2 gigabytes).  When a file's size
+ * does exceed 2Gb, apr_file_info_get() will fail with an error on the
  * descriptor, likewise apr_stat()/apr_lstat() will fail on the
  * filename.  apr_dir_read() will fail with APR_INCOMPLETE on a
  * directory entry for a large file depending on the particular
@@ -808,6 +808,7 @@ APR_DECLARE(apr_status_t) apr_file_info_get(apr_finfo_t *finfo,
  * Truncate the file's length to the specified offset
  * @param fp The file to truncate
  * @param offset The offset to truncate to.
+ * @remark The read/write file offset is repositioned to offset.
  */
 APR_DECLARE(apr_status_t) apr_file_trunc(apr_file_t *fp, apr_off_t offset);
 

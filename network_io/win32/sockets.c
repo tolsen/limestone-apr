@@ -114,7 +114,7 @@ APR_DECLARE(apr_status_t) apr_socket_create(apr_socket_t **new, int family,
      * purposes, always transform the socket() created as a non-inherited
      * handle
      */
-#if APR_HAS_UNICODE_FS
+#if APR_HAS_UNICODE_FS && !defined(_WIN32_WCE)
     IF_WIN_OS_IS_UNICODE {
         /* A different approach.  Many users report errors such as 
          * (32538)An operation was attempted on something that is not 
@@ -128,9 +128,13 @@ APR_DECLARE(apr_status_t) apr_socket_create(apr_socket_t **new, int family,
         SetHandleInformation((HANDLE) (*new)->socketdes, 
                              HANDLE_FLAG_INHERIT, 0);
     }
-#endif
 #if APR_HAS_ANSI_FS
-    ELSE_WIN_OS_IS_ANSI {
+    /* only if APR_HAS_ANSI_FS && APR_HAS_UNICODE_FS */
+    ELSE_WIN_OS_IS_ANSI
+#endif
+#endif
+#if APR_HAS_ANSI_FS || defined(_WIN32_WCE)
+    {
         HANDLE hProcess = GetCurrentProcess();
         HANDLE dup;
         if (DuplicateHandle(hProcess, (HANDLE) (*new)->socketdes, hProcess, 

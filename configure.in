@@ -350,6 +350,57 @@ case "$host:$CC" in
 	;;
 esac
 
+AC_CACHE_CHECK([whether the compiler provides atomic builtins], [atomic_builtins],
+[AC_TRY_RUN([
+int main()
+{
+    unsigned long val = 1010, tmp, *mem = &val;
+
+    if (__sync_fetch_and_add(&val, 1010) != 1010 || val != 2020)
+        return 1;
+
+    tmp = val;
+
+    if (__sync_fetch_and_sub(mem, 1010) != tmp || val != 1010)
+        return 1;
+
+    if (__sync_sub_and_fetch(&val, 1010) != 0 || val != 0)
+        return 1;
+
+    tmp = 3030;
+
+    if (__sync_val_compare_and_swap(mem, 0, tmp) != 0 || val != tmp)
+        return 1;
+
+    if (__sync_lock_test_and_set(&val, 4040) != 3030)
+        return 1;
+
+    mem = &tmp;
+
+    if (__sync_val_compare_and_swap(&mem, &tmp, &val) != &tmp)
+        return 1;
+
+    __sync_synchronize();
+
+    if (mem != &val)
+        return 1;
+
+    return 0;
+}], [atomic_builtins=yes], [atomic_builtins=no], [atomic_builtins=no])])
+
+if test "$atomic_builtins" = "yes"; then
+    AC_DEFINE(HAVE_ATOMIC_BUILTINS, 1, [Define if compiler provides atomic builtins])
+fi
+
+case $host in
+    powerpc-405-*)
+        # The IBM ppc405cr processor has a bugged stwcx instruction.
+        AC_DEFINE(PPC405_ERRATA, 1, [Define on PowerPC 405 where errata 77 applies])
+        ;;
+    *)
+        ;;
+esac
+
 dnl Check the depend program we can use
 APR_CHECK_DEPEND
 
@@ -456,7 +507,7 @@ void main(void)
 
     if (sizeof(off64_t) != 8 || sizeof(off_t) != 4)
        exit(1);
-    if ((fd = open("conftest.lfs", O_LARGEFILE|O_CREAT|O_WRONLY)) < 0)
+    if ((fd = open("conftest.lfs", O_LARGEFILE|O_CREAT|O_WRONLY, 0644)) < 0)
        exit(2);
     if (ftruncate64(fd, off) != 0)
        ret = 3;
@@ -495,7 +546,7 @@ esac
 ])
 
 if test $force_generic_atomics = yes; then
-   AC_DEFINE([USE_GENERIC_ATOMICS], 1,
+   AC_DEFINE([USE_ATOMICS_GENERIC], 1,
              [Define if use of generic atomics is requested])
 fi
 
@@ -1279,25 +1330,82 @@ else
     socklen_t_value="int"
 fi
 
+# Basically, we have tried to figure out the correct format strings
+# for APR types which vary between platforms, but we don't always get
+# it right.
+case $host in
+   s390*linux*)
+       # uniquely, the 31-bit Linux/s390 uses "unsigned long int"
+       # for size_t rather than "unsigned int":
+       size_t_fmt="lu"
+       ssize_t_fmt="ld"
+       ;;
+   *-os2*)
+       size_t_fmt="lu"
+       ;;
+   *-solaris*)
+       pid_t_fmt="ld"
+       ;;
+   *aix4*|*aix5*)
+       ssize_t_fmt="ld"
+       size_t_fmt="ld"
+       ;;
+    *beos*)
+        ssize_t_fmt="ld"
+        size_t_fmt="ld"
+        ;;
+    *apple-darwin*)
+        osver=`uname -r`
+        case $osver in
+           [[0-7]].*)
+              ssize_t_fmt="d"
+              ;;
+           *)
+              ssize_t_fmt="ld"
+              ;;
+        esac
+        size_t_fmt="lu"
+        ;;
+esac
+
+APR_CHECK_TYPES_COMPATIBLE(ssize_t, int, [ssize_t_fmt="d"])
+APR_CHECK_TYPES_COMPATIBLE(ssize_t, long, [ssize_t_fmt="ld"])
+APR_CHECK_TYPES_COMPATIBLE(size_t, unsigned int, [size_t_fmt="u"])
+APR_CHECK_TYPES_COMPATIBLE(size_t, unsigned long, [size_t_fmt="lu"])
+
 APR_CHECK_SIZEOF_EXTENDED([#include <sys/types.h>], ssize_t, 8)
 
-if test "$ac_cv_sizeof_ssize_t" = "$ac_cv_sizeof_int"; then
-    ssize_t_fmt='#define APR_SSIZE_T_FMT "d"'
+AC_MSG_CHECKING([which format to use for apr_ssize_t])
+if test -n "$ssize_t_fmt"; then
+    AC_MSG_RESULT(%$ssize_t_fmt)
+elif test "$ac_cv_sizeof_ssize_t" = "$ac_cv_sizeof_int"; then
+    ssize_t_fmt="d"
+    AC_MSG_RESULT(%d)
 elif test "$ac_cv_sizeof_ssize_t" = "$ac_cv_sizeof_long"; then
-    ssize_t_fmt='#define APR_SSIZE_T_FMT "ld"'
+    ssize_t_fmt="ld"
+    AC_MSG_RESULT(%ld)
 else
-    ssize_t_fmt='#error Can not determine the proper size for ssize_t'
+    AC_ERROR([could not determine the proper format for apr_ssize_t])
 fi
+
+ssize_t_fmt="#define APR_SSIZE_T_FMT \"$ssize_t_fmt\""
 
 APR_CHECK_SIZEOF_EXTENDED([#include <stddef.h>], size_t, 8)
 
-if test "$ac_cv_sizeof_size_t" = "$ac_cv_sizeof_int"; then
-    size_t_fmt='#define APR_SIZE_T_FMT "d"'
+AC_MSG_CHECKING([which format to use for apr_size_t])
+if test -n "$size_t_fmt"; then
+    AC_MSG_RESULT(%$size_t_fmt)
+elif test "$ac_cv_sizeof_size_t" = "$ac_cv_sizeof_int"; then
+    size_t_fmt="d"
+    AC_MSG_RESULT(%d)
 elif test "$ac_cv_sizeof_size_t" = "$ac_cv_sizeof_long"; then
-    size_t_fmt='#define APR_SIZE_T_FMT "ld"'
+    size_t_fmt="ld"
+    AC_MSG_RESULT(%ld)
 else
-    size_t_fmt='#error Can not determine the proper size for size_t'
+    AC_ERROR([could not determine the proper format for apr_size_t])
 fi
+
+size_t_fmt="#define APR_SIZE_T_FMT \"$size_t_fmt\""
 
 APR_CHECK_SIZEOF_EXTENDED([#include <sys/types.h>], off_t, 8)
 
@@ -1368,45 +1476,6 @@ if test $ac_cv_c_bigendian = yes; then
 else
     bigendian=0
 fi
-
-# Basically, we have tried to figure out the correct format strings
-# for APR types which vary between platforms, but we don't always get 
-# it right.  If you find that we don't get it right for your platform, 
-# you can override our decision below.
-case $host in
-   s390*linux*)
-       # uniquely, the 31-bit Linux/s390 uses "unsigned long int"
-       # for size_t rather than "unsigned int":
-       size_t_fmt='#define APR_SIZE_T_FMT "lu"'
-       ssize_t_fmt='#define APR_SSIZE_T_FMT "ld"'
-       ;;
-   *-os2*)
-       size_t_fmt='#define APR_SIZE_T_FMT "lu"'
-       ;;
-   *-solaris*)
-       pid_t_fmt='#define APR_PID_T_FMT "ld"'
-       ;;
-   *aix4*|*aix5*)
-       ssize_t_fmt='#define APR_SSIZE_T_FMT "ld"'
-       size_t_fmt='#define APR_SIZE_T_FMT "ld"'
-       ;;
-    *beos*)
-        ssize_t_fmt='#define APR_SSIZE_T_FMT "ld"'
-        size_t_fmt='#define APR_SIZE_T_FMT "ld"'
-        ;;
-    *apple-darwin*)
-        osver=`uname -r`
-        case $osver in
-           [0-7].*)
-              ssize_t_fmt='#define APR_SSIZE_T_FMT "d"'
-              ;;
-           *)
-              ssize_t_fmt='#define APR_SSIZE_T_FMT "ld"'
-              ;;
-        esac
-        size_t_fmt='#define APR_SIZE_T_FMT "lu"'
-        ;;
-esac
 
 APR_CHECK_SIZEOF_EXTENDED([#include <sys/types.h>
 #include <sys/uio.h>],struct iovec,0)
@@ -1594,6 +1663,7 @@ echo "${nl}Checking for Locking..."
 
 AC_CHECK_FUNCS(semget semctl flock)
 AC_CHECK_HEADERS(semaphore.h OS.h)
+AC_SEARCH_LIBS(sem_open, rt)
 AC_CHECK_FUNCS(sem_close sem_unlink sem_post sem_wait create_sem)
 
 # Some systems return ENOSYS from sem_open.
@@ -1603,6 +1673,9 @@ AC_TRY_RUN([
 #include <stdlib.h>
 #include <fcntl.h>
 #include <semaphore.h>
+#ifndef SEM_FAILED
+#define SEM_FAILED (-1)
+#endif
 main()
 {
     sem_t *psem;
@@ -1613,6 +1686,11 @@ main()
 	exit(1);
     }
     sem_close(psem);
+    psem = sem_open(sem_name, O_CREAT | O_EXCL, 0644, 1);
+    if (psem != (sem_t *)SEM_FAILED) {
+        sem_close(psem);
+        exit(1);
+    }
     sem_unlink(sem_name);
     exit(0);
 }], [ac_cv_func_sem_open=yes], [ac_cv_func_sem_open=no],
