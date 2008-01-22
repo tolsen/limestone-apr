@@ -75,8 +75,12 @@ extern "C" {
                                              file should support
                                              apr_socket_sendfile operation */
 #define APR_FOPEN_LARGEFILE   0x04000 /**< Platform dependent flag to enable
-                                         large file support; WARNING see
-                                         below. */
+                                       * large file support, see WARNING below
+                                       */
+#define APR_FOPEN_SPARSE      0x08000 /**< Platform dependent flag to enable
+                                       * sparse file support, see WARNING below
+                                       */
+
 /* backcompat */
 #define APR_READ             APR_FOPEN_READ       /**< @deprecated @see APR_FOPEN_READ */
 #define APR_WRITE            APR_FOPEN_WRITE      /**< @deprecated @see APR_FOPEN_WRITE */   
@@ -93,7 +97,7 @@ extern "C" {
 #define APR_SENDFILE_ENABLED APR_FOPEN_SENDFILE_ENABLED /**< @deprecated @see APR_FOPEN_SENDFILE_ENABLED */   
 #define APR_LARGEFILE        APR_FOPEN_LARGEFILE  /**< @deprecated @see APR_FOPEN_LARGEFILE */   
 
-/** @warning The APR_FOPEN_LARGEFILE flag only has effect on some
+/** @warning APR_FOPEN_LARGEFILE flag only has effect on some
  * platforms where sizeof(apr_off_t) == 4.  Where implemented, it
  * allows opening and writing to a file which exceeds the size which
  * can be represented by apr_off_t (2 gigabytes).  When a file's size
@@ -102,7 +106,18 @@ extern "C" {
  * filename.  apr_dir_read() will fail with APR_INCOMPLETE on a
  * directory entry for a large file depending on the particular
  * APR_FINFO_* flags.  Generally, it is not recommended to use this
- * flag. */
+ * flag.
+ *
+ * @warning APR_FOPEN_SPARSE may, depending on platform, convert a
+ * normal file to a sparse file.  Some applications may be unable
+ * to decipher a sparse file, so it's critical that the sparse file
+ * flag should only be used for files accessed only by APR or other
+ * applications known to be able to decipher them.  APR does not
+ * guarentee that it will compress the file into sparse segments
+ * if it was previously created and written without the sparse flag.
+ * On platforms which do not understand, or on file systems which
+ * cannot handle sparse files, the flag is ignored by apr_file_open().
+ */
 
 /** @} */
 
@@ -618,16 +633,45 @@ APR_DECLARE(apr_status_t) apr_file_seek(apr_file_t *thefile,
 
 /**
  * Create an anonymous pipe.
- * @param in The file descriptor to use as input to the pipe.
- * @param out The file descriptor to use as output from the pipe.
+ * @param in The newly created pipe's file for reading.
+ * @param out The newly created pipe's file for writing.
  * @param pool The pool to operate on.
  * @remark By default, the returned file descriptors will be inherited
  * by child processes created using apr_proc_create().  This can be
  * changed using apr_file_inherit_unset().
+ * @bug  Some platforms cannot toggle between blocking and nonblocking,
+ * and when passing a pipe as a standard handle to an application which
+ * does not expect it, a non-blocking stream will fluxor the client app.
+ * @deprecated @see apr_file_pipe_create_ex
  */
 APR_DECLARE(apr_status_t) apr_file_pipe_create(apr_file_t **in, 
                                                apr_file_t **out,
                                                apr_pool_t *pool);
+
+/**
+ * Create an anonymous pipe which portably supports async timeout options.
+ * @param in The newly created pipe's file for reading.
+ * @param out The newly created pipe's file for writing.
+ * @param blocking one of these values defined in apr_thread_proc.h;
+ * <pre>
+ *       APR_FULL_BLOCK
+ *       APR_READ_BLOCK
+ *       APR_WRITE_BLOCK
+ *       APR_FULL_NONBLOCK
+ * </pre>
+ * @remark By default, the returned file descriptors will be inherited
+ * by child processes created using apr_proc_create().  This can be
+ * changed using apr_file_inherit_unset().
+ * @remark Some platforms cannot toggle between blocking and nonblocking,
+ * and when passing a pipe as a standard handle to an application which
+ * does not expect it, a non-blocking stream will fluxor the client app.
+ * Use this function rather than apr_file_pipe_create to create pipes 
+ * where one or both ends require non-blocking semantics.
+ */
+APR_DECLARE(apr_status_t) apr_file_pipe_create_ex(apr_file_t **in, 
+                                                  apr_file_t **out, 
+                                                  apr_int32_t blocking, 
+                                                  apr_pool_t *p);
 
 /**
  * Create a named pipe.
@@ -790,6 +834,8 @@ APR_DECLARE(apr_status_t) apr_dir_make_recursive(const char *path,
  * Remove directory from the file system.
  * @param path the path for the directory to be removed. (use / on all systems)
  * @param pool the pool to use.
+ * @remark Removing a directory which is in-use (e.g., the current working
+ * directory, or during apr_dir_read, or with an open file) is not portable.
  */                        
 APR_DECLARE(apr_status_t) apr_dir_remove(const char *path, apr_pool_t *pool);
 

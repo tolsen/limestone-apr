@@ -191,14 +191,18 @@ dnl	       # Not a problem in 10.20.  Otherwise, who knows?
 	APR_ADDTO(CPPFLAGS, [-DRHAPSODY])
 	;;
     *-apple-darwin*)
-	APR_ADDTO(CPPFLAGS, [-DDARWIN -DSIGPROCMASK_SETS_THREAD_MASK -no-cpp-precomp])
-	APR_SETIFNULL(apr_posixsem_is_global, [yes])
-        APR_SETIFNULL(ac_cv_func_poll, [no]) # See issue 34332
-
-        # kqueue is broken on OS X, the poll tests work, but the socket tests
-        # hang when it's turned on.  if you decide to reenable this please be
-        # sure to test that ALL the tests continue to work with it turned on.
-        APR_SETIFNULL(ac_cv_func_kqueue, [no]) 
+        APR_ADDTO(CPPFLAGS, [-DDARWIN -DSIGPROCMASK_SETS_THREAD_MASK -no-cpp-precomp])
+        APR_SETIFNULL(apr_posixsem_is_global, [yes])
+        # kqueue works in 10.5/Darwin 9.x. Disable on all older versions.
+        case $host in
+            *-apple-darwin[[0-8]].*)
+            # kqueue is broken on OS X, the poll tests work, but the socket tests
+            # hang when it's turned on.  if you decide to reenable this please be
+            # sure to test that ALL the tests continue to work with it turned on.
+            APR_SETIFNULL(ac_cv_func_kqueue, [no]) 
+            APR_SETIFNULL(ac_cv_func_poll, [no]) # See issue 34332
+            ;;
+        esac
 	;;
     *-dec-osf*)
 	APR_ADDTO(CPPFLAGS, [-DOSF1])
@@ -415,7 +419,8 @@ dnl	       # Not a problem in 10.20.  Otherwise, who knows?
        APR_SETIFNULL(apr_sysvsem_is_global, [yes])
        APR_SETIFNULL(apr_gethostbyname_is_thread_safe, [yes])
        APR_SETIFNULL(apr_gethostbyaddr_is_thread_safe, [yes])
-       APR_ADDTO(CPPFLAGS, [-U_NO_PROTO -DPTHREAD_ATTR_SETDETACHSTATE_ARG2_ADDR -DPTHREAD_SETS_ERRNO -DPTHREAD_DETACH_ARG1_ADDR -DSIGPROCMASK_SETS_THREAD_MASK -DTCP_NODELAY=1])
+       AC_DEFINE(HAVE_ZOS_PTHREADS, 1, [Define for z/OS pthread API nuances])
+       APR_ADDTO(CPPFLAGS, [-U_NO_PROTO -DSIGPROCMASK_SETS_THREAD_MASK -DTCP_NODELAY=1])
        ;;
     *-ibm-as400)
        APR_SETIFNULL(apr_lock_method, [USE_SYSVSEM_SERIALIZE])

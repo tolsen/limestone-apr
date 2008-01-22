@@ -213,6 +213,7 @@ FARPROC apr_load_dll_func(apr_dlltoken_e fnLib, char *fnName, int ordinal);
  */
 
 #if !defined(_WIN32_WCE) && !defined(WINNT)
+/* This group is available to all versions of WINNT 4.0 SP6 and later */
 
 #ifdef GetFileAttributesExA
 #undef GetFileAttributesExA
@@ -308,6 +309,30 @@ APR_DECLARE_LATE_DLL_FUNC(DLL_SHSTDAPI, LPWSTR *, WINAPI, CommandLineToArgvW, 0,
 #endif /* !defined(_WIN32_WCE) && !defined(WINNT) */
 
 #if !defined(_WIN32_WCE)
+/* This group is NOT available to all versions of WinNT,
+ * these we must always look up
+ */
+
+#ifdef GetCompressedFileSizeA
+#undef GetCompressedFileSizeA
+#endif
+APR_DECLARE_LATE_DLL_FUNC(DLL_WINBASEAPI, DWORD, WINAPI, GetCompressedFileSizeA, 0, (
+    IN LPCSTR lpFileName,
+    OUT LPDWORD lpFileSizeHigh),
+    (lpFileName, lpFileSizeHigh));
+#define GetCompressedFileSizeA apr_winapi_GetCompressedFileSizeA
+#undef GetCompressedFileSize
+#define GetCompressedFileSize apr_winapi_GetCompressedFileSizeA
+
+#ifdef GetCompressedFileSizeW
+#undef GetCompressedFileSizeW
+#endif
+APR_DECLARE_LATE_DLL_FUNC(DLL_WINBASEAPI, DWORD, WINAPI, GetCompressedFileSizeW, 0, (
+    IN LPCWSTR lpFileName,
+    OUT LPDWORD lpFileSizeHigh),
+    (lpFileName, lpFileSizeHigh));
+#define GetCompressedFileSizeW apr_winapi_GetCompressedFileSizeW
+
 
 APR_DECLARE_LATE_DLL_FUNC(DLL_NTDLL, DWORD, WINAPI, NtQueryTimerResolution, 0, (
     ULONG *pMaxRes,  /* Minimum NS Resolution */
@@ -323,16 +348,13 @@ APR_DECLARE_LATE_DLL_FUNC(DLL_NTDLL, DWORD, WINAPI, NtSetTimerResolution, 0, (
     (ReqRes, Acquire, pNewRes));
 #define SetTimerResolution apr_winapi_NtSetTimerResolution
 
-/* ### These are ULONG_PTR values, but that's int32 for all we care
- * until the Win64 port is prepared.
- */
 typedef struct PBI {
-    DWORD ExitStatus;
-    PVOID PebBaseAddress;
-    ULONG AffinityMask;
-    LONG  BasePriority;
-    ULONG UniqueProcessId;
-    ULONG InheritedFromUniqueProcessId;
+    LONG      ExitStatus;
+    PVOID     PebBaseAddress;
+    ULONG_PTR AffinityMask;
+    LONG      BasePriority;
+    ULONG_PTR UniqueProcessId;
+    ULONG_PTR InheritedFromUniqueProcessId;
 } PBI, *PPBI;
 
 APR_DECLARE_LATE_DLL_FUNC(DLL_NTDLL, DWORD, WINAPI, NtQueryInformationProcess, 0, (
@@ -353,7 +375,31 @@ APR_DECLARE_LATE_DLL_FUNC(DLL_NTDLL, DWORD, WINAPI, NtQueryObject, 0, (
     (hObject, info, pOI, LenOI, pSizeOI));
 #define QueryObject apr_winapi_NtQueryObject
 
+typedef struct IOSB {
+    union {
+    UINT Status;
+    PVOID reserved;
+    };
+    ULONG_PTR Information; /* Varies by op, consumed buffer size for FSI below */
+} IOSB, *PIOSB;
+
+typedef struct FSI {
+    LONGLONG AllocationSize;
+    LONGLONG EndOfFile;
+    ULONG    NumberOfLinks;
+    BOOL     DeletePending;
+    BOOL     Directory;
+} FSI, *PFSI;
+
+APR_DECLARE_LATE_DLL_FUNC(DLL_NTDLL, LONG, WINAPI, ZwQueryInformationFile, 0, (
+    HANDLE hObject,    /* Obvious */
+    PVOID  pIOSB,      /* Point to the IOSB buffer for detailed return results */
+    PVOID  pFI,        /* The buffer, using FIB above */
+    ULONG  LenFI,      /* Use sizeof(FI) */
+    ULONG  info),      /* Use 5 for FSI documented above*/
+    (hObject, pIOSB, pFI, LenFI, info));
+#define ZwQueryInformationFile apr_winapi_ZwQueryInformationFile
+
 #endif /* !defined(_WIN32_WCE) */
 
 #endif  /* ! MISC_H */
-
