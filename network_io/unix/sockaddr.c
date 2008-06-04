@@ -711,12 +711,12 @@ APR_DECLARE(apr_status_t) apr_getservbyname(apr_sockaddr_t *sockaddr,
         return APR_EINVAL;
 
     if ((se = getservbyname(servname, NULL)) != NULL){
-        sockaddr->port = htons(se->s_port);
+        sockaddr->port = ntohs(se->s_port);
         sockaddr->servname = apr_pstrdup(sockaddr->pool, servname);
         sockaddr->sa.sin.sin_port = se->s_port;
         return APR_SUCCESS;
     }
-    return errno;
+    return APR_ENOENT;
 }
 
 #define V4MAPPED_EQUAL(a,b)                                   \

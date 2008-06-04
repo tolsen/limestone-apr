@@ -55,7 +55,7 @@
 #if defined(__APPLE__)
 #  define SHELL_CMD  "/bin/sh"
 #  define DYNAMIC_LIB_EXT "dylib"
-#  define MODULE_LIB_EXT  "so"
+#  define MODULE_LIB_EXT  "bundle"
 #  define STATIC_LIB_EXT "a"
 #  define OBJECT_EXT     "o"
 #  define LIBRARIAN      "ar"
@@ -322,7 +322,7 @@ static int snprintf( char *str, size_t n, const char *fmt, ... )
 
 void init_count_chars(count_chars *cc)
 {
-    cc->vals = (const char**)malloc(PATH_MAX);
+    cc->vals = (const char**)malloc(PATH_MAX*sizeof(char*));
     cc->num = 0;
 }
 
@@ -590,6 +590,14 @@ int parse_short_opt(char *arg, command_t *cmd_data)
 
     if (strcmp(arg, "module") == 0) {
         cmd_data->output = otModule;
+        return 1;
+    }
+
+    if (strcmp(arg, "shared") == 0) {
+        if (cmd_data->mode == mLink) {
+            cmd_data->output = otDynamicLibraryOnly;
+        }
+        cmd_data->options.shared = share_SHARED;
         return 1;
     }
 
@@ -1228,6 +1236,15 @@ int explode_static_lib(command_t *cmd_data, const char *lib)
     dir = opendir(tmpdir);
 
     while ((entry = readdir(dir)) != NULL) {
+#if defined(__APPLE__) && defined(RANLIB)
+        /* Apple inserts __.SYMDEF which isn't needed.
+         * Leopard (10.5+) can also add '__.SYMDEF SORTED' which isn't
+         * much fun either.  Just skip them.
+         */
+        if (strstr(entry->d_name, "__.SYMDEF") != NULL) {
+            continue;
+        }
+#endif
         if (entry->d_name[0] != '.') {
             push_count_chars(&tmpdir_cc, entry->d_name);
             name = flatten_count_chars(&tmpdir_cc, 0);

@@ -54,7 +54,8 @@ typedef enum {
 #endif
 #define NUL '\0'
 
-#define S_NULL "(null)"
+static const char null_string[] = "(null)";
+#define S_NULL ((char *)null_string)
 #define S_NULL_LEN 6
 
 #define FLOAT_DIGITS 6
@@ -68,8 +69,8 @@ typedef enum {
 #define NUM_BUF_SIZE 512
 
 /*
- * cvt.c - IEEE floating point formatting routines for FreeBSD
- * from GNU libc-4.6.27.  Modified to be thread safe.
+ * cvt - IEEE floating point formatting routines.
+ *       Derived from UNIX V7, Copyright(C) Caldera International Inc.
  */
 
 /*
@@ -689,7 +690,7 @@ APR_DECLARE(int) apr_vformatter(int (*flush_func)(apr_vformatter_buff_t *),
 
     register char *s = NULL;
     char *q;
-    apr_size_t s_len;
+    apr_size_t s_len = 0;
 
     register apr_size_t min_width = 0;
     apr_size_t precision = 0;
