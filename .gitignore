@@ -31,3 +31,4 @@ include/apr.h
 include/arch/unix/apr_private.h
 include/arch/unix/apr_private.h.in
 libtool
+.lime-config-generated.mk
