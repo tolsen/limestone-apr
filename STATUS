@@ -1,9 +1,14 @@
 APACHE PORTABLE RUNTIME (APR) LIBRARY STATUS:        -*- coding: utf-8 -*-
-Last modified at [$Date: 2008-05-30 17:20:59 -0400 (Fri, 30 May 2008) $]
+Last modified at [$Date: 2009-01-03 12:55:44 -0500 (Sat, 03 Jan 2009) $]
 
 Releases:
-
-    1.3.0     : tagged May 30, 2008
+    2.0.0     : in development on trunk/
+    1.4.0     : in development on branches/1.4.x/
+    1.3.4     : in development on branches/1.3.x/
+    1.3.3     : released August 14, 2008
+    1.3.2     : released June 23, 2008
+    1.3.1     : not released
+    1.3.0     : released June 3, 2008
     1.2.12    : released November 25, 2007
     1.2.11    : released September 6, 2007
     1.2.10    : not released
@@ -22,7 +27,8 @@ Releases:
     1.1.0     : released January 25, 2005
     1.0.1     : released November 19, 2004
     1.0.0     : released September 1, 2004
-    0.9.17    : in maintenance
+    0.9.18    : in maintenance
+    0.9.17    : released November 25, 2007
     0.9.16    : released September 6, 2007
     0.9.15    : not released
     0.9.14    : tagged June 4, 2007
