@@ -29,6 +29,7 @@ build/argz.m4
 build/ltoptions.m4
 build/ltsugar.m4
 build/ltversion.m4
+build/ltdl.m4
 export_vars.c
 exports.c
 include/apr.h
