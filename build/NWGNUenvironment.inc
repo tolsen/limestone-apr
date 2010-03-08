@@ -39,14 +39,14 @@ ifndef NOVELLLIBC
 NOVELLLIBC = C:/novell/ndk/libc
 endif
 ifneq "$(wildcard $(NOVELLLIBC)/include/ndkvers.h)" "$(NOVELLLIBC)/include/ndkvers.h"
-$(error NOVELLLIBC does not point to a valid LIBC SDK) 
+$(error NOVELLLIBC does not point to a valid Novell LIBC SDK) 
 endif
 
 ifndef LDAPSDK
 LDAPSDK = C:/novell/ndk/cldapsdk/NetWare/libc
 endif
 ifneq "$(wildcard $(LDAPSDK)/inc/ldap.h)" "$(LDAPSDK)/inc/ldap.h"
-$(error LDAPSDK does not point to a valid CLDAP SDK) 
+$(error LDAPSDK does not point to a valid Novell CLDAP SDK) 
 endif
 
 ifndef METROWERKS
@@ -233,28 +233,19 @@ endif
 
 INSTALLBASE := $(INSTALL)\$(BASEDIR)
 
-INSTDEVDIRS := \
-    $(INSTDIRS) \
-	$(INSTALLBASE) \
-	$(INSTALLBASE)\include \
-	$(INSTALLBASE)\lib \
-
-INSTDIRS += \
-	$(INSTALLBASE) \
-	
 else
+
 INSTALLBASE := $(INSTALL)\apr
 
-INSTDEVDIRS := \
-    $(INSTDIRS) \
-	$(INSTALLBASE) \
-	$(INSTALLBASE)\include \
-	$(INSTALLBASE)\lib \
+endif
 
 INSTDIRS += \
-	$(INSTALLBASE) \
-	
-endif	
+	$(INSTALLBASE)
+
+INSTDEVDIRS := \
+	$(INSTDIRS) \
+	$(INSTALLBASE)\include \
+	$(INSTALLBASE)\lib
 
 #
 # Declare Command and tool macros here

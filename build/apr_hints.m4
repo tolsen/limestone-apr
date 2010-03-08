@@ -118,7 +118,7 @@ dnl	       # Not a problem in 10.20.  Otherwise, who knows?
     *-hp-hpux*)
 	APR_ADDTO(CPPFLAGS, [-DHPUX -D_REENTRANT])
 	;;
-    *-linux*)
+    *-linux-*)
         case `uname -r` in
 	    2.* )  APR_ADDTO(CPPFLAGS, [-DLINUX=2])
 	           ;;
@@ -194,15 +194,14 @@ dnl	       # Not a problem in 10.20.  Otherwise, who knows?
     *-apple-darwin*)
         APR_ADDTO(CPPFLAGS, [-DDARWIN -DSIGPROCMASK_SETS_THREAD_MASK -no-cpp-precomp])
         APR_SETIFNULL(apr_posixsem_is_global, [yes])
-        # kqueue appeared to work in 10.5/Darwin 9.x and was entirely broken in 
-        # previous versions.  disable it in any case for now until resolved;
         case $host in
-            *-apple-darwin*)
-            # kqueue is broken on OS X, the poll tests work, but the socket tests
-            # hang when it's turned on.  if you decide to reenable this please be
-            # sure to test that ALL the tests continue to work with it turned on.
-            APR_SETIFNULL(ac_cv_func_kqueue, [no]) 
-            APR_SETIFNULL(ac_cv_func_poll, [no]) # See issue 34332
+            *-apple-darwin[[1-9]].*)
+                # APR's use of kqueue has triggered kernel panics for some
+                # 10.5.x (Darwin 9.x) users when running the entire test suite.
+                # In 10.4.x, use of kqueue would cause the socket tests to hang.
+                # 10.6+ (Darwin 10.x is supposed to fix the KQueue issues
+                APR_SETIFNULL(ac_cv_func_kqueue, [no]) 
+                APR_SETIFNULL(ac_cv_func_poll, [no]) # See issue 34332
             ;;
         esac
 	;;
