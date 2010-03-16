@@ -30,10 +30,12 @@ build/ltoptions.m4
 build/ltsugar.m4
 build/ltversion.m4
 build/ltdl.m4
+build/lt~obsolete.m4
 export_vars.c
 exports.c
 include/apr.h
 include/arch/unix/apr_private.h
 include/arch/unix/apr_private.h.in
+include/arch/unix/apr_private.h.in~
 libtool
 .lime-config-generated.mk
